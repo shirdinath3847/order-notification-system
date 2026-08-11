@@ -5,12 +5,10 @@ package com.enterprise.order;
 option java_multiple_files = true;
 option java_package = "com.enterprise.order.grpc";
 
-// The gRPC Service
 service OrderGrpcService {
   rpc createOrder (OrderRequest) returns (OrderResponse);
 }
 
-// Request Payload
 message OrderRequest {
   string orderId = 1;
   string customerId = 2;
@@ -18,7 +16,6 @@ message OrderRequest {
   string item = 4;
 }
 
-// Response Payload
 message OrderResponse {
   string orderId = 1;
   string status = 2;

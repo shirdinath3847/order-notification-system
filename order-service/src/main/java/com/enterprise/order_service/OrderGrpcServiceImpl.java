@@ -13,18 +13,26 @@ public class OrderGrpcServiceImpl extends OrderGrpcServiceGrpc.OrderGrpcServiceI
 
     private static final Logger log = LoggerFactory.getLogger(OrderGrpcServiceImpl.class);
 
+    private final OrderProducer orderProducer;
+
+    public OrderGrpcServiceImpl(OrderProducer orderProducer) {
+        this.orderProducer = orderProducer;
+    }
+
     @Override
     public void createOrder(OrderRequest request, StreamObserver<OrderResponse> responseObserver) {
         log.info("Received gRPC request for Order ID: {} and Item: {}", request.getOrderId(), request.getItem());
 
-        // Build the response payload
+        // 1. Publish Event to Kafka
+        orderProducer.sendOrderEvent(request.getOrderId(), request.getItem());
+
+        // 2. Return Response back to Client
         OrderResponse response = OrderResponse.newBuilder()
                 .setOrderId(request.getOrderId())
                 .setStatus("SUCCESS")
-                .setMessage("Order processed successfully via gRPC!")
+                .setMessage("Order processed and Kafka event published!")
                 .build();
 
-        // Send response back to the client
         responseObserver.onNext(response);
         responseObserver.onCompleted();
     }
