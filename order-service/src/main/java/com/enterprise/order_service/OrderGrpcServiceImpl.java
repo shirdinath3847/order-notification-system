@@ -7,6 +7,7 @@ import io.grpc.stub.StreamObserver;
 import net.devh.boot.grpc.server.service.GrpcService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -15,42 +16,45 @@ public class OrderGrpcServiceImpl extends OrderGrpcServiceGrpc.OrderGrpcServiceI
 
     private static final Logger log = LoggerFactory.getLogger(OrderGrpcServiceImpl.class);
 
-    private final OrderProducer orderProducer;
-    private final OrderRepository orderRepository; // Inject Repository
+    private final OrderRepository orderRepository;
+    private final OutboxEventRepository outboxEventRepository;
 
-    public OrderGrpcServiceImpl(OrderProducer orderProducer, OrderRepository orderRepository) {
-        this.orderProducer = orderProducer;
+    public OrderGrpcServiceImpl(OrderRepository orderRepository, OutboxEventRepository outboxEventRepository) {
         this.orderRepository = orderRepository;
+        this.outboxEventRepository = outboxEventRepository;
     }
 
     @Override
+    @Transactional
     public void createOrder(OrderRequest request, StreamObserver<OrderResponse> responseObserver) {
-        log.info("Received gRPC request for Order ID: {} and Item: {}", request.getOrderId(), request.getItem());
+        log.info("Received gRPC createOrder request for Order ID: {}", request.getOrderId());
 
-        // 1. Save initial record in PostgreSQL with PENDING status
-        OrderEntity entity = new OrderEntity(
-                request.getOrderId(),
-                request.getCustomerId(),
-                request.getAmount(),
-                request.getItem(),
-                "PENDING",
-                LocalDateTime.now()
+        // 1. Save Order Entity to Database
+        OrderEntity order = new OrderEntity();
+        order.setOrderId(request.getOrderId());
+        order.setItem(request.getItem());
+        order.setAmount(request.getAmount());
+        order.setCustomerId(request.getCustomerId());
+        order.setStatus("CREATED");
+        order.setCreatedAt(LocalDateTime.now());
+        orderRepository.save(order);
+
+        // 2. Save Outbox Record within the SAME database transaction
+        String eventPayload = String.format(
+                "{\"orderId\":\"%s\", \"item\":\"%s\", \"customerId\":\"%s\", \"amount\":%.2f, \"status\":\"CREATED\"}",
+                order.getOrderId(), order.getItem(), order.getCustomerId(), order.getAmount()
         );
-        orderRepository.save(entity);
-        log.info("Order saved to PostgreSQL database with status PENDING");
 
-        // 2. Publish Event to Kafka Docker Broker
-        orderProducer.sendOrderEvent(request.getOrderId(), request.getItem());
+        OutboxEvent outboxEvent = new OutboxEvent("ORDER", order.getOrderId(), "order-events", eventPayload);
+        outboxEventRepository.save(outboxEvent);
 
-        // 3. Update status to COMPLETED after event is dispatched
-        entity.setStatus("COMPLETED");
-        orderRepository.save(entity);
+        log.info("Order and Outbox record saved atomically to PostgreSQL for Order ID: {}", order.getOrderId());
 
-        // 4. Return gRPC Response back to Client
+        // 3. Return gRPC response matching OrderResponse
         OrderResponse response = OrderResponse.newBuilder()
-                .setOrderId(request.getOrderId())
+                .setOrderId(order.getOrderId())
                 .setStatus("SUCCESS")
-                .setMessage("Order saved to DB and Kafka event published!")
+                .setMessage("Order created and queued via Transactional Outbox")
                 .build();
 
         responseObserver.onNext(response);
