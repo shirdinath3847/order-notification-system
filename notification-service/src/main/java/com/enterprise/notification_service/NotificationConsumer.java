@@ -10,14 +10,11 @@ public class NotificationConsumer {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationConsumer.class);
 
-    @KafkaListener(topics = "order-events", groupId = "notification-group")
+    @KafkaListener(topics = "order-events", groupId = "${spring.kafka.consumer.group-id}")
     public void consumeOrderEvent(String message) {
-
-        // Print bright console borders so it's easy to spot
-        System.out.println("\n==================================================");
-        System.out.println("📩 [NOTIFICATION SERVICE] KAFKA EVENT RECEIVED!");
-        System.out.println("📦 Payload Data: " + message);
-        System.out.println("📧 Action: Sending email notification to customer...");
-        System.out.println("==================================================\n");
+        log.info("==================================================");
+        log.info("📩 [NOTIFICATION SERVICE] KAFKA EVENT RECEIVED!");
+        log.info("📦 Payload: {}", message);
+        log.info("==================================================");
     }
 }
